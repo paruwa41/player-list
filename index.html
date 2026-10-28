@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<title>FiveM Player List — Nightside</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1020;--panel:#141b2d;--panel2:#1b2540;--text:#edf2ff;--muted:#9ca9c7;--accent:#7c9cff;--line:#2b3652;--green:#39d98a}
+*{box-sizing:border-box}
+body{margin:0;background:linear-gradient(180deg,#111a32 0,#0b1020 260px);color:var(--text);font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh;padding:env(safe-area-inset-top) 12px env(safe-area-inset-bottom)}
+main{max-width:760px;margin:0 auto;padding:18px 0 30px}
+header,.toolbar,.summary,.player,.favoritesbar{background:var(--panel);border:1px solid var(--line);border-radius:16px}
+header{padding:18px;margin-bottom:12px}
+.eyebrow{font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:var(--accent);font-weight:800}
+h1{font-size:22px;line-height:1.2;margin:7px 0 5px}
+.sub{color:var(--muted);font-size:13px}
+.controls{display:flex;gap:8px;margin-top:16px}
+input{min-width:0;flex:1;background:#0c1325;border:1px solid var(--line);border-radius:11px;color:var(--text);font-size:16px;padding:12px}
+button{border:0;border-radius:11px;padding:12px 14px;font-weight:750;font-size:14px;background:var(--accent);color:#081126}
+button.secondary{background:var(--panel2);color:var(--text);border:1px solid var(--line)}
+.summary{display:flex;justify-content:space-between;gap:10px;padding:14px 16px;margin-bottom:12px;align-items:center}
+.count{font-size:23px;font-weight:800}.muted{color:var(--muted);font-size:12px}
+.toolbar{padding:10px;margin-bottom:12px}
+.toolbar input{width:100%;flex:auto}
+.list{display:grid;gap:9px}
+.player{padding:13px;display:grid;grid-template-columns:42px minmax(0,1fr) auto;gap:10px;align-items:center}
+.id{height:38px;width:38px;border-radius:12px;background:var(--panel2);display:grid;place-items:center;color:#c7d4ff;font-weight:800}
+.name{font-weight:750;overflow-wrap:anywhere}.meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:5px;color:var(--muted);font-size:12px}
+.ping{font-weight:800;font-size:13px;color:var(--green);text-align:right}
+.social{display:flex;gap:6px;margin-top:8px}
+.social a{display:inline-flex;align-items:center;gap:5px;text-decoration:none;color:#dce5ff;background:#202c49;border:1px solid #344263;border-radius:8px;padding:6px 9px;font-size:12px}
+.social a.discord{background:#24243f;border-color:#49477b}
+.favoritesbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px;margin-bottom:12px}
+.favbtn{background:var(--panel2);color:#dce5ff;border:1px solid var(--line);padding:8px 10px;min-width:40px}
+.favbtn.active{color:#ffe08a;border-color:#9b7b32;background:#332a17}
+.favbtn:disabled{opacity:.45}
+.favnote{font-size:11px;color:var(--muted);margin-left:auto}
+.status{padding:14px;border-radius:12px;background:#17223b;color:var(--muted);line-height:1.5;font-size:13px}
+.error{color:#ffb4b4}.ok{color:#a8f4ca}
+footer{text-align:center;color:#7e8baa;font-size:11px;padding:18px 8px}
+a{color:#b7c8ff}
+@media(min-width:560px){.list{grid-template-columns:1fr 1fr}.player{min-width:0}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div class="eyebrow">FiveM · Player lookup</div>
+  <h1 id="serverName">Nightside Roleplay</h1>
+  <div class="sub">Lokalna lista graczy · serwer <span id="serverIdLabel">oax7ga7</span></div>
+  <div class="controls">
+    <input id="serverId" value="oax7ga7" autocapitalize="none" autocomplete="off" spellcheck="false" aria-label="Server ID" placeholder="Server ID">
+    <button id="loadBtn">Sprawdź</button>
+  </div>
+</header>
+<section class="summary">
+  <div><div class="muted">Gracze online</div><div class="count" id="count">—</div></div>
+  <div style="text-align:right"><div class="muted">Ostatnia aktualizacja</div><div id="updated">Jeszcze nie pobrano</div></div>
+</section>
+<section class="toolbar">
+  <input id="search" placeholder="Szukaj gracza po nicku lub ID…" aria-label="Szukaj gracza">
+</section>
+<section class="favoritesbar">
+  <button id="allBtn" class="secondary">Wszyscy</button>
+  <button id="favoritesBtn" class="secondary">★ Ulubieni <span id="favCount">0</span></button>
+  <button id="clearFavBtn" class="secondary">Wyczyść ulubionych</button>
+  <span class="favnote">Ulubieni zapisują się na tym urządzeniu</span>
+</section>
+<div id="status" class="status" role="status">Naciśnij „Sprawdź”, aby pobrać listę graczy.</div>
+<div id="players" class="list" style="margin-top:10px"></div>
+<footer>Ulubieni są zapisywani na tym urządzeniu po Discord ID, a jeśli go brak — po Steam ID. Pamięć ulubionych nie synchronizuje się automatycznie między urządzeniami/przeglądarkami.</footer>
+</main>
+<script>
+(() => {
+  const API = 'https://frontend.cfx-services.net/api/servers/single/';
+  const $ = id => document.getElementById(id);
+  let players = [];
+  let onlyFavorites = false;
+  const FAVORITES_KEY = 'nightside-player-list:favorites:v1';
+  function loadFavorites() {
+    try {
+      const value = JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]');
+      return new Set(Array.isArray(value) ? value.filter(x => typeof x === 'string') : []);
+    } catch (_) { return new Set(); }
+  }
+  let favorites = loadFavorites();
+  function saveFavorites() {
+    try { localStorage.setItem(FAVORITES_KEY, JSON.stringify([...favorites])); }
+    catch (_) { setStatus('Nie udało się zapisać ulubionych. Sprawdź ustawienia prywatności przeglądarki.','error'); }
+    $('favCount').textContent = String(favorites.size);
+  }
+  function favoriteKey(p) {
+    const discord = identifier(p.identifiers, 'discord');
+    const steam = identifier(p.identifiers, 'steam');
+    if (discord && /^\d{15,22}$/.test(discord)) return 'discord:' + discord;
+    if (steam) return 'steam:' + steam.toLowerCase();
+    return '';
+  }
+  function setStatus(message, kind='') {
+    $('status').className = 'status' + (kind ? ' '+kind : '');
+    $('status').textContent = message;
+    $('status').style.display = 'block';
+  }
+  function identifier(ids, prefix) {
+    if (!Array.isArray(ids)) return '';
+    const found = ids.find(x => typeof x === 'string' && x.toLowerCase().startsWith(prefix + ':'));
+    return found ? found.slice(prefix.length + 1) : '';
+  }
+  function safeText(tag, className, value) {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+    el.textContent = value;
+    return el;
+  }
+  function render() {
+    const target = $('players');
+    target.replaceChildren();
+    const q = $('search').value.trim().toLowerCase();
+    const shown = players.filter(p => {
+      const matchesSearch = String(p.name || '').toLowerCase().includes(q) || String(p.id).includes(q);
+      return matchesSearch && (!onlyFavorites || (favoriteKey(p) && favorites.has(favoriteKey(p))));
+    });
+    if (!shown.length) {
+      if (players.length) setStatus(onlyFavorites ? 'Nie ma teraz ulubionych graczy online albo nie pasują do wyszukiwania.' : 'Brak graczy pasujących do wyszukiwania.');
+      return;
+    }
+    shown.forEach((p, index) => {
+      const card = document.createElement('article'); card.className='player';
+      card.appendChild(safeText('div','id',String(p.id ?? '?')));
+      const info = document.createElement('div');
+      info.appendChild(safeText('div','name',p.name || 'Nieznany gracz'));
+      const meta = document.createElement('div'); meta.className='meta';
+      meta.appendChild(safeText('span','',`#${index+1} · ID ${p.id ?? '?'}`));
+      info.appendChild(meta);
+      const social = document.createElement('div'); social.className='social';
+      const discordId = identifier(p.identifiers, 'discord');
+      const steamId = identifier(p.identifiers, 'steam');
+      if (discordId && /^\d{15,22}$/.test(discordId)) {
+        const a = document.createElement('a'); a.className='discord'; a.href='https://discord.com/users/'+encodeURIComponent(discordId); a.target='_blank'; a.rel='noopener noreferrer'; a.textContent='Discord ↗'; social.appendChild(a);
+      } else {
+        social.appendChild(safeText('span','muted','Brak Discord ID'));
+      }
+      if (steamId && /^[0-9a-f]+$/i.test(steamId)) {
+        const a = document.createElement('a'); a.href='https://steamcommunity.com/profiles/'+BigInt('0x'+steamId).toString(); a.target='_blank'; a.rel='noopener noreferrer'; a.textContent='Steam ↗'; social.appendChild(a);
+      }
+      info.appendChild(social);
+      card.appendChild(info);
+      const right = document.createElement('div');
+      const key = favoriteKey(p);
+      const fav = document.createElement('button');
+      fav.className = 'favbtn' + (key && favorites.has(key) ? ' active' : '');
+      fav.textContent = key && favorites.has(key) ? '★' : '☆';
+      fav.title = key ? (favorites.has(key) ? 'Usuń z ulubionych' : 'Dodaj do ulubionych') : 'Brak Discord ID i Steam ID — nie można zapisać na stałe';
+      fav.setAttribute('aria-label', fav.title);
+      fav.disabled = !key;
+      fav.addEventListener('click', () => {
+        if (!key) return;
+        if (favorites.has(key)) favorites.delete(key); else favorites.add(key);
+        saveFavorites(); render();
+      });
+      right.appendChild(fav);
+      const ping = document.createElement('div'); ping.appendChild(safeText('div','ping',`${p.ping ?? '?'} ms`)); ping.appendChild(safeText('div','muted','PING'));
+      right.appendChild(ping);
+      card.appendChild(right);
+      target.appendChild(card);
+    });
+    if (shown.length) $('status').style.display='none';
+  }
+  async function load() {
+    const id = $('serverId').value.trim();
+    if (!/^[a-z0-9]{6,8}$/i.test(id)) { setStatus('Wpisz poprawne Server ID (6–8 znaków).','error'); return; }
+    $('loadBtn').disabled = true; $('loadBtn').textContent = 'Ładowanie…';
+    setStatus('Pobieram dane serwera i listę graczy…');
+    $('players').replaceChildren();
+    try {
+      const response = await fetch(API + encodeURIComponent(id), {cache:'no-store'});
+      if (!response.ok) throw new Error('API odpowiedziało kodem HTTP '+response.status);
+      const json = await response.json();
+      const data = json && json.Data;
+      if (!data) throw new Error('Odpowiedź API nie zawiera danych serwera.');
+      players = Array.isArray(data.players) ? data.players.slice().sort((a,b)=>(a.id??0)-(b.id??0)) : [];
+      $('serverName').textContent = data.hostname || 'FiveM Player List';
+      $('serverIdLabel').textContent = id;
+      $('count').textContent = `${players.length} / ${data.sv_maxclients ?? data.svMaxclients ?? '?'}`;
+      $('updated').textContent = new Date().toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      if (!players.length) setStatus('API odpowiedziało poprawnie, ale nie zwróciło graczy.','error');
+      else { setStatus(`Pobrano ${players.length} graczy.`,'ok'); render(); }
+    } catch (e) {
+      players = []; $('count').textContent='—'; $('players').replaceChildren();
+      setStatus('Nie udało się pobrać listy. '+(e && e.message ? e.message : 'Błąd połączenia')+'. Jeśli otwierasz ten plik lokalnie, Safari może blokować żądanie API przez CORS. Wtedy potrzebny będzie prosty pośrednik albo hosting.','error');
+    } finally { $('loadBtn').disabled=false; $('loadBtn').textContent='Sprawdź'; }
+  }
+  $('loadBtn').addEventListener('click', load);
+  $('serverId').addEventListener('keydown', e => { if (e.key === 'Enter') load(); });
+  $('search').addEventListener('input', render);
+  $('allBtn').addEventListener('click', () => { onlyFavorites = false; $('allBtn').classList.add('active'); $('favoritesBtn').classList.remove('active'); render(); });
+  $('favoritesBtn').addEventListener('click', () => { onlyFavorites = true; $('favoritesBtn').classList.add('active'); $('allBtn').classList.remove('active'); render(); });
+  $('clearFavBtn').addEventListener('click', () => {
+    if (!favorites.size) { setStatus('Nie masz zapisanych ulubionych.'); return; }
+    if (confirm('Usunąć wszystkich zapisanych ulubionych graczy?')) { favorites.clear(); saveFavorites(); render(); setStatus('Lista ulubionych została wyczyszczona.','ok'); }
+  });
+  $('favCount').textContent = String(favorites.size);
+  $('allBtn').classList.add('active');
+  load();
+})();
+</script>
+</body>
+</html>
